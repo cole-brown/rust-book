@@ -1,0 +1,65 @@
+#-------------------------------------------------------------------------------
+# Image 0: Builder
+#-------------------------------------------------------------------------------
+# Our 'builder' image is based on the latest official Rust image.
+FROM rust:latest as builder
+
+
+#-----------------------------
+# Prep Base Image
+#-----------------------------
+
+WORKDIR /usr/src
+
+RUN apt-get update && \
+    apt-get dist-upgrade -y && \
+    apt-get install -y musl-tools && \
+    rustup target add x86_64-unknown-linux-musl
+
+# The 'musl' target is designed to be statically linked, which will let us have
+# a smaller Docker image below (Image 1).
+
+
+#-----------------------------
+# Get & Compile Rust
+#-----------------------------
+
+# Download and compile Rust dependencies in this separate 'builder' image.
+RUN USER=root cargo new book
+WORKDIR /usr/src/book
+COPY Cargo.toml Cargo.lock ./
+RUN cargo install --target x86_64-unknown-linux-musl --path .
+
+
+#-----------------------------
+# Get & Compile Application
+#-----------------------------
+
+# Build our Rust executable using our source code.
+COPY src ./src
+RUN cargo install --target x86_64-unknown-linux-musl --path .
+
+
+
+
+#-------------------------------------------------------------------------------
+# Image 1: Rust App
+#-------------------------------------------------------------------------------
+
+# 'scratch' is a special target that tells Docker this should be... from
+# scratch. With nothing else included.
+FROM scratch
+
+
+#-----------------------------
+# Pull Application In
+#-----------------------------
+
+COPY --from=builder /usr/local/cargo/bin/book .
+COPY static .
+
+# User ID 1000 is the first non-root user. Whoever that is...
+# So we want to run as not-root I guess?
+USER 1000
+
+CMD ["./myprogram"]
